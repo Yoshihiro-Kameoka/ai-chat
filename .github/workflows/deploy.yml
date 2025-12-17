@@ -49,8 +49,7 @@ jobs:
 
       - name: Deploy to Cloud Run
         run: |
-          # Cloud Buildに自動的にサービスアカウントを選択させる
-          # （Compute Engineデフォルトサービスアカウントが使用され、権限は設定済み）
+          # GitHub ActionsサービスアカウントをCloud Buildのビルド実行に使用
           gcloud run deploy ${{ env.SERVICE_NAME }} \
             --source . \
             --platform managed \
@@ -60,6 +59,7 @@ jobs:
             --cpu 1 \
             --max-instances 10 \
             --min-instances 0 \
+            --build-service-account github-actions-deploy@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
             --set-env-vars "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" \
             --project=${{ env.PROJECT_ID }}
 
