@@ -47,11 +47,25 @@ jobs:
           gcloud services enable run.googleapis.com --project=${{ env.PROJECT_ID }} || true
           gcloud services enable artifactregistry.googleapis.com --project=${{ env.PROJECT_ID }} || true
 
+      - name: Configure Docker to use gcloud as credential helper
+        run: |
+          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/ai-chat/${{ env.SERVICE_NAME }}:${{ github.sha }} .
+          docker tag ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/ai-chat/${{ env.SERVICE_NAME }}:${{ github.sha }} \
+                     ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/ai-chat/${{ env.SERVICE_NAME }}:latest
+
+      - name: Push Docker image to Artifact Registry
+        run: |
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/ai-chat/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/ai-chat/${{ env.SERVICE_NAME }}:latest
+
       - name: Deploy to Cloud Run
         run: |
-          # Cloud Buildがサービスアカウントを自動選択
           gcloud run deploy ${{ env.SERVICE_NAME }} \
-            --source . \
+            --image ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/ai-chat/${{ env.SERVICE_NAME }}:${{ github.sha }} \
             --platform managed \
             --region ${{ env.REGION }} \
             --allow-unauthenticated \
