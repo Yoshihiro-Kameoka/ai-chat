@@ -1,0 +1,413 @@
+# AI Chat プロジェクト引き継ぎドキュメント
+
+## 📋 プロジェクト概要
+
+- **プロジェクト名**: AI Chat
+- **プロジェクトID**: `ai-chat-481005`
+- **プロジェクト番号**: `547627011742`
+- **リージョン**: `asia-northeast1` (東京)
+- **サービス名**: `ai-chat`
+- **GitHubリポジトリ**: `Yoshihiro-Kameoka/ai-chat`
+
+## 🏗️ アーキテクチャ
+
+### 技術スタック
+- **フロントエンド**: Next.js 15 (App Router) + React 19 + TailwindCSS
+- **バックエンド**: Next.js + Hono
+- **ORM**: Prisma.js
+- **データベース**: MongoDB
+- **AIモデル**: Claude-3-sonnet (Anthropic)
+- **デプロイ先**: Google Cloud Run
+
+### デプロイフロー
+```
+GitHub (mainブランチ)
+  ↓
+GitHub Actions (自動トリガー)
+  ↓
+Workload Identity Federation (認証)
+  ↓
+Google Cloud Build (Dockerイメージビルド)
+  ↓
+Artifact Registry (イメージ保存)
+  ↓
+Cloud Run (デプロイ)
+```
+
+## 🔐 認証と権限設定
+
+### 使用されているサービスアカウント
+
+#### 1. Compute Engineデフォルトサービスアカウント
+- **アカウント**: `547627011742-compute@developer.gserviceaccount.com`
+- **用途**: `gcloud run deploy --source`が内部的に使用
+- **権限**:
+  - プロジェクトレベル: `roles/artifactregistry.admin`, `roles/artifactregistry.writer`, `roles/run.admin`, `roles/storage.admin`
+  - リポジトリレベル (`ai-chat`): `roles/artifactregistry.admin`, `roles/artifactregistry.writer`
+  - リポジトリレベル (`cloud-run-source-deploy`): `roles/artifactregistry.admin`, `roles/artifactregistry.writer`
+
+#### 2. Cloud Buildサービスアカウント
+- **アカウント**: `547627011742@cloudbuild.gserviceaccount.com`
+- **用途**: Cloud Buildのビルド実行
+- **権限**:
+  - プロジェクトレベル: `roles/artifactregistry.writer`, `roles/cloudbuild.builds.builder`, `roles/run.admin`, `roles/storage.admin`
+  - リポジトリレベル (`ai-chat`): `roles/artifactregistry.admin`, `roles/artifactregistry.writer`
+
+#### 3. Cloud Buildサービスエージェント
+- **アカウント**: `service-547627011742@gcp-sa-cloudbuild.iam.gserviceaccount.com`
+- **用途**: Cloud Buildの内部操作
+- **権限**:
+  - プロジェクトレベル: `roles/artifactregistry.writer`, `roles/cloudbuild.serviceAgent`, `roles/editor`
+  - リポジトリレベル: `roles/artifactregistry.writer`
+
+#### 4. GitHub Actionsサービスアカウント
+- **アカウント**: `github-actions-deploy@ai-chat-481005.iam.gserviceaccount.com`
+- **用途**: GitHub Actionsからのデプロイ実行
+- **権限**:
+  - プロジェクトレベル: `roles/artifactregistry.writer`, `roles/cloudbuild.builds.editor`, `roles/iam.serviceAccountUser`, `roles/run.admin`, `roles/serviceusage.serviceUsageAdmin`, `roles/storage.admin`
+  - リポジトリレベル (`ai-chat`): `roles/artifactregistry.writer`
+  - バケットレベル (`run-sources-ai-chat-481005-asia-northeast1`): `roles/storage.admin`, `roles/storage.objectAdmin`, `roles/storage.legacyBucketReader`
+
+### Workload Identity Federation
+
+- **Pool名**: `github-actions-pool`
+- **Provider名**: `github-actions-provider`
+- **リポジトリ**: `Yoshihiro-Kameoka/ai-chat`
+- **設定スクリプト**: `scripts/setup-workload-identity.sh`
+
+## 🚀 初回セットアップ手順
+
+### 1. 前提条件の確認
+
+```bash
+# Google Cloud SDKのインストール確認
+gcloud --version
+
+# 認証確認
+gcloud auth login
+gcloud config set project ai-chat-481005
+```
+
+### 2. 必要なAPIの有効化
+
+```bash
+gcloud services enable cloudbuild.googleapis.com
+gcloud services enable run.googleapis.com
+gcloud services enable artifactregistry.googleapis.com
+```
+
+### 3. Artifact Registryリポジトリの作成
+
+```bash
+# ai-chatリポジトリ（明示的に作成する場合）
+gcloud artifacts repositories create ai-chat \
+  --repository-format=docker \
+  --location=asia-northeast1 \
+  --description="Docker repository for AI Chat" \
+  --project=ai-chat-481005
+
+# cloud-run-source-deployは自動的に作成される
+```
+
+### 4. 権限の一括設定
+
+以下のスクリプトで必要な権限を一括設定できます：
+
+```bash
+#!/bin/bash
+PROJECT_ID="ai-chat-481005"
+PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format="value(projectNumber)")
+REGION="asia-northeast1"
+
+# プロジェクトレベルの権限
+echo "プロジェクトレベルの権限を設定中..."
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/artifactregistry.admin" \
+  --condition=None
+
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/artifactregistry.writer" \
+  --condition=None
+
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/run.admin" \
+  --condition=None
+
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/storage.admin" \
+  --condition=None
+
+# Cloud Buildサービスアカウント
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member="serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
+  --role="roles/artifactregistry.writer" \
+  --condition=None
+
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member="serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
+  --role="roles/run.admin" \
+  --condition=None
+
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member="serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
+  --role="roles/storage.admin" \
+  --condition=None
+
+# Cloud Buildサービスエージェント
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member="serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-cloudbuild.iam.gserviceaccount.com" \
+  --role="roles/editor" \
+  --condition=None
+
+# リポジトリレベルの権限
+echo "リポジトリレベルの権限を設定中..."
+for REPO in ai-chat cloud-run-source-deploy; do
+  echo "リポジトリ: $REPO"
+  
+  # Compute Engineサービスアカウント
+  gcloud artifacts repositories add-iam-policy-binding ${REPO} \
+    --location=${REGION} \
+    --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+    --role="roles/artifactregistry.admin" \
+    --project=${PROJECT_ID}
+  
+  # Cloud Buildサービスアカウント
+  gcloud artifacts repositories add-iam-policy-binding ${REPO} \
+    --location=${REGION} \
+    --member="serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
+    --role="roles/artifactregistry.admin" \
+    --project=${PROJECT_ID}
+  
+  # Cloud Buildサービスエージェント
+  gcloud artifacts repositories add-iam-policy-binding ${REPO} \
+    --location=${REGION} \
+    --member="serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-cloudbuild.iam.gserviceaccount.com" \
+    --role="roles/artifactregistry.writer" \
+    --project=${PROJECT_ID}
+done
+
+# サービスアカウント借用権限
+echo "サービスアカウント借用権限を設定中..."
+gcloud iam service-accounts add-iam-policy-binding ${PROJECT_NUMBER}-compute@developer.gserviceaccount.com \
+  --member="serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountUser" \
+  --project=${PROJECT_ID}
+
+gcloud iam service-accounts add-iam-policy-binding ${PROJECT_NUMBER}-compute@developer.gserviceaccount.com \
+  --member="serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-cloudbuild.iam.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountUser" \
+  --project=${PROJECT_ID}
+
+echo "✅ 権限設定完了"
+```
+
+### 5. GitHub Actionsのセットアップ
+
+```bash
+# Workload Identity Federationの設定
+bash scripts/setup-workload-identity.sh
+```
+
+**GitHub Secretsの設定:**
+リポジトリの **Settings** > **Secrets and variables** > **Actions** で以下を設定：
+- `ANTHROPIC_API_KEY`: Anthropic APIキー
+
+## 📝 デプロイ方法
+
+### 方法1: GitHub Actions（推奨）
+
+`main`ブランチにpushすると自動的にデプロイされます。
+
+```bash
+git add .
+git commit -m "Your commit message"
+git push origin main
+```
+
+または、GitHub Actionsタブから手動実行も可能です。
+
+### 方法2: ローカルから直接デプロイ
+
+```bash
+# 環境変数を設定
+export ANTHROPIC_API_KEY=your-api-key-here
+
+# デプロイ
+gcloud run deploy ai-chat \
+  --source . \
+  --platform managed \
+  --region asia-northeast1 \
+  --allow-unauthenticated \
+  --memory 512Mi \
+  --cpu 1 \
+  --max-instances 10 \
+  --min-instances 0 \
+  --set-env-vars "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}" \
+  --project=ai-chat-481005
+```
+
+## 🔍 トラブルシューティング
+
+### エラー1: Artifact Registry権限エラー
+
+**エラーメッセージ:**
+```
+denied: Permission "artifactregistry.repositories.uploadArtifacts" denied on resource "projects/ai-chat-481005/locations/asia-northeast1/repositories/ai-chat"
+```
+
+**原因:**
+- `gcloud run deploy --source`が使用するサービスアカウントにArtifact Registryへの書き込み権限が不足
+- 通常、Compute Engineデフォルトサービスアカウント（`PROJECT_NUMBER-compute@developer.gserviceaccount.com`）が使用される
+
+**解決方法:**
+1. プロジェクトレベルとリポジトリレベルの両方に権限を付与
+2. 特に`roles/artifactregistry.admin`を付与（`roles/artifactregistry.writer`だけでは不十分な場合がある）
+3. IAMポリシーの反映には数分かかる場合がある（最大10-15分）
+
+**確認コマンド:**
+```bash
+PROJECT_NUMBER=$(gcloud projects describe ai-chat-481005 --format="value(projectNumber)")
+
+# プロジェクトレベルの権限確認
+gcloud projects get-iam-policy ai-chat-481005 \
+  --flatten="bindings[].members" \
+  --format="table(bindings.role)" \
+  --filter="bindings.members:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com AND bindings.role:roles/artifactregistry*"
+
+# リポジトリレベルの権限確認
+gcloud artifacts repositories get-iam-policy ai-chat \
+  --location=asia-northeast1 \
+  --project=ai-chat-481005
+```
+
+### エラー2: Cloud Storageバケット権限エラー
+
+**エラーメッセージ:**
+```
+ERROR: does not have storage.buckets.get access to the Google Cloud Storage bucket
+```
+
+**原因:**
+- GitHub ActionsサービスアカウントにCloud Storageバケットへのアクセス権限が不足
+
+**解決方法:**
+```bash
+BUCKET_NAME="run-sources-ai-chat-481005-asia-northeast1"
+
+# プロジェクトレベル
+gcloud projects add-iam-policy-binding ai-chat-481005 \
+  --member="serviceAccount:github-actions-deploy@ai-chat-481005.iam.gserviceaccount.com" \
+  --role="roles/storage.admin"
+
+# バケットレベル
+gcloud storage buckets add-iam-policy-binding gs://${BUCKET_NAME} \
+  --member="serviceAccount:github-actions-deploy@ai-chat-481005.iam.gserviceaccount.com" \
+  --role="roles/storage.admin" \
+  --project=ai-chat-481005
+```
+
+### エラー3: サービスアカウントキー作成エラー
+
+**エラーメッセージ:**
+```
+ERROR: Key creation is not allowed on this service account.
+```
+
+**原因:**
+- 組織ポリシーでサービスアカウントキーの作成が制限されている
+
+**解決方法:**
+- Workload Identity Federationを使用（推奨）
+- `scripts/setup-workload-identity.sh`を実行
+
+### エラー4: ビルドエラーの確認
+
+```bash
+# 最新のビルドIDを取得
+BUILD_ID=$(gcloud builds list --project=ai-chat-481005 --limit=1 --format="value(id)")
+
+# ビルドログを確認
+gcloud builds log ${BUILD_ID} --project=ai-chat-481005 | tail -100
+
+# ビルドの詳細を確認
+gcloud builds describe ${BUILD_ID} --project=ai-chat-481005
+```
+
+## ⚠️ 重要な注意事項
+
+### 1. サービスアカウントの選択
+
+- `gcloud run deploy --source`は`--build-service-account`フラグでサービスアカウントを指定できますが、**ユーザー管理のサービスアカウント**のみ指定可能
+- Cloud Buildのデフォルトサービスアカウント（`@cloudbuild.gserviceaccount.com`）は指定できない
+- フラグを指定しない場合、Compute Engineデフォルトサービスアカウントが使用される
+
+### 2. 権限の反映時間
+
+- IAMポリシーの変更は即座に反映されない場合がある
+- 最大10-15分かかる場合がある
+- エラーが続く場合は、数分待ってから再試行
+
+### 3. リポジトリの自動作成
+
+- `gcloud run deploy --source`は`cloud-run-source-deploy`リポジトリを自動作成する
+- このリポジトリにも適切な権限を付与する必要がある
+
+### 4. プロジェクトレベル vs リポジトリレベル
+
+- プロジェクトレベルの権限だけでは不十分な場合がある
+- リポジトリレベルの権限も明示的に付与する必要がある
+- 特に`roles/artifactregistry.admin`をリポジトリレベルで付与することが重要
+
+## 📊 現在の設定状況
+
+### 権限設定の確認
+
+```bash
+PROJECT_NUMBER=$(gcloud projects describe ai-chat-481005 --format="value(projectNumber)")
+
+# Compute Engineサービスアカウントの権限
+echo "=== Compute Engineサービスアカウント ==="
+gcloud projects get-iam-policy ai-chat-481005 \
+  --flatten="bindings[].members" \
+  --format="table(bindings.role)" \
+  --filter="bindings.members:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
+
+# リポジトリレベルの権限
+echo "=== ai-chatリポジトリ ==="
+gcloud artifacts repositories get-iam-policy ai-chat \
+  --location=asia-northeast1 \
+  --project=ai-chat-481005
+```
+
+## 🔗 関連リソース
+
+- **Cloud Runコンソール**: https://console.cloud.google.com/run/detail/asia-northeast1/ai-chat?project=ai-chat-481005
+- **Cloud Buildコンソール**: https://console.cloud.google.com/cloud-build/builds?project=ai-chat-481005
+- **Artifact Registryコンソール**: https://console.cloud.google.com/artifacts?project=ai-chat-481005
+- **GitHub Actions**: https://github.com/Yoshihiro-Kameoka/ai-chat/actions
+
+## 📚 参考ドキュメント
+
+- [DEPLOY.md](./DEPLOY.md) - 詳細なデプロイガイド
+- [README.md](./README.md) - プロジェクトの概要とセットアップ
+- [Google Cloud Run ドキュメント](https://cloud.google.com/run/docs)
+- [Workload Identity Federation ドキュメント](https://cloud.google.com/iam/docs/workload-identity-federation)
+
+## 🆘 サポート
+
+問題が発生した場合：
+1. 上記のトラブルシューティングセクションを確認
+2. Cloud Buildのログを確認
+3. IAMポリシーを再確認
+4. 必要に応じて権限を再設定
+
+---
+
+**最終更新**: 2025-12-17
+**作成者**: AI Assistant
+**プロジェクト**: AI Chat (ai-chat-481005)
+
