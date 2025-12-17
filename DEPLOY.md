@@ -72,6 +72,14 @@ gcloud projects add-iam-policy-binding ai-chat-481005 \
   --member="serviceAccount:github-actions-deploy@ai-chat-481005.iam.gserviceaccount.com" \
   --role="roles/iam.serviceAccountUser"
 
+gcloud projects add-iam-policy-binding ai-chat-481005 \
+  --member="serviceAccount:github-actions-deploy@ai-chat-481005.iam.gserviceaccount.com" \
+  --role="roles/serviceusage.serviceUsageAdmin"
+
+gcloud projects add-iam-policy-binding ai-chat-481005 \
+  --member="serviceAccount:github-actions-deploy@ai-chat-481005.iam.gserviceaccount.com" \
+  --role="roles/storage.admin"
+
 # サービスアカウントキーを作成
 gcloud iam service-accounts keys create github-actions-key.json \
   --iam-account=github-actions-deploy@ai-chat-481005.iam.gserviceaccount.com
