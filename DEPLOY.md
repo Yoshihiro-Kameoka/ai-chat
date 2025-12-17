@@ -240,6 +240,48 @@ gcloud run deploy ai-chat \
 
 ## トラブルシューティング
 
+### Cloud Storageバケット権限エラー
+
+`gcloud run deploy --source` を使用する際、以下のエラーが発生することがあります：
+
+```
+ERROR: does not have storage.buckets.get access to the Google Cloud Storage bucket
+```
+
+#### 原因
+
+`gcloud run deploy --source` は、ソースコードをアップロードするために `run-sources-{PROJECT_ID}-{REGION}` というCloud Storageバケットを使用します。このバケットへのアクセス権限が不足している場合に発生します。
+
+#### 解決手順
+
+##### ステップ1: プロジェクトレベルの権限を確認・付与
+
+```bash
+# Storage Admin権限を付与（プロジェクトレベル）
+gcloud projects add-iam-policy-binding ai-chat-481005 \
+  --member="serviceAccount:github-actions-deploy@ai-chat-481005.iam.gserviceaccount.com" \
+  --role="roles/storage.admin"
+```
+
+##### ステップ2: バケットレベルの権限を付与（重要）
+
+バケットが既に存在する場合、バケットレベルでも明示的に権限を付与する必要があります：
+
+```bash
+# バケット名を確認（通常は run-sources-{PROJECT_ID}-{REGION}）
+BUCKET_NAME="run-sources-ai-chat-481005-asia-northeast1"
+
+# バケットレベルのStorage Admin権限を付与
+gcloud storage buckets add-iam-policy-binding gs://${BUCKET_NAME} \
+  --member="serviceAccount:github-actions-deploy@ai-chat-481005.iam.gserviceaccount.com" \
+  --role="roles/storage.admin" \
+  --project=ai-chat-481005
+```
+
+**注意**: バケットは `gcloud run deploy --source` が初回実行時に自動的に作成します。バケットが存在しない場合は、まずプロジェクトレベルの権限を付与してからデプロイを実行してください。
+
+---
+
 ### Artifact Registry権限エラー（重要）
 
 `gcloud run deploy --source` を使用する際、以下のエラーが発生することがあります：
