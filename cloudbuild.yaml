@@ -1,0 +1,25 @@
+# Google Cloud Build configuration for AI Chat
+
+steps:
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/ai-chat/ai-chat:$BUILD_ID'
+      - '-t'
+      - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/ai-chat/ai-chat:latest'
+      - '.'
+
+  # Note: Images are automatically pushed by Cloud Build based on the 'images' section below
+  # Deploy will be done separately in deploy.sh after build completes
+
+images:
+  - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/ai-chat/ai-chat:$BUILD_ID'
+  - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/ai-chat/ai-chat:latest'
+
+options:
+  machineType: 'N1_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: '1200s'

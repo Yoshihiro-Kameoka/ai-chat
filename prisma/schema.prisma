@@ -1,0 +1,28 @@
+// Prisma schema for AI Chat application
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("MONGODB_URI")
+}
+
+// Message model for storing chat messages
+model Message {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  sessionId String   @db.ObjectId
+  role      String   // "user" or "assistant"
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
+
+// Session model for tracking chat sessions (optional for future use)
+model Session {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  createdAt DateTime @default(now())
+  expiresAt DateTime?
+}

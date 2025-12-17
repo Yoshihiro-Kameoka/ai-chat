@@ -1,0 +1,76 @@
+name: Deploy to Google Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # 手動実行を許可
+  pull_request:
+    branches:
+      - main
+
+env:
+  PROJECT_ID: ai-chat-481005
+  REGION: asia-northeast1
+  SERVICE_NAME: ai-chat
+
+jobs:
+  deploy:
+    name: Deploy to Cloud Run
+    runs-on: ubuntu-latest
+    # プルリクエストの場合はデプロイをスキップ
+    if: github.event_name != 'pull_request'
+    
+    permissions:
+      contents: read
+      id-token: write # Workload Identity Federation用（オプション）
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Enable required APIs
+        run: |
+          gcloud services enable cloudbuild.googleapis.com --project=${{ env.PROJECT_ID }}
+          gcloud services enable run.googleapis.com --project=${{ env.PROJECT_ID }}
+          gcloud services enable artifactregistry.googleapis.com --project=${{ env.PROJECT_ID }}
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --source . \
+            --platform managed \
+            --region ${{ env.REGION }} \
+            --allow-unauthenticated \
+            --memory 512Mi \
+            --cpu 1 \
+            --max-instances 10 \
+            --min-instances 0 \
+            --set-env-vars "ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}" \
+            --project=${{ env.PROJECT_ID }}
+
+      - name: Get service URL
+        id: get-url
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --format='value(status.url)')
+          echo "url=$SERVICE_URL" >> $GITHUB_OUTPUT
+          echo "🌐 アプリケーションURL: $SERVICE_URL"
+
+      - name: Output deployment URL
+        run: |
+          echo "✅ デプロイが完了しました！"
+          echo "🌐 アプリケーションURL: ${{ steps.get-url.outputs.url }}"
+
