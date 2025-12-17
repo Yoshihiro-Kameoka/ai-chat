@@ -329,6 +329,42 @@ gcloud projects add-iam-policy-binding ai-chat-481005 \
 
 ##### ステップ3: リポジトリレベルの権限を付与（重要）
 
+**`ai-chat`リポジトリ**（`gcloud run deploy --source`が使用する場合）と**`cloud-run-source-deploy`リポジトリ**の両方に、**3つのサービスアカウントすべて**に権限を付与する必要があります：
+
+**`ai-chat`リポジトリへの権限付与：**
+
+```bash
+# Compute Engineデフォルトサービスアカウント
+gcloud artifacts repositories add-iam-policy-binding ai-chat \
+  --location=asia-northeast1 \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/artifactregistry.writer" \
+  --project=ai-chat-481005
+
+# Cloud Buildサービスアカウント
+gcloud artifacts repositories add-iam-policy-binding ai-chat \
+  --location=asia-northeast1 \
+  --member="serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
+  --role="roles/artifactregistry.writer" \
+  --project=ai-chat-481005
+
+# Cloud Buildサービスエージェント
+gcloud artifacts repositories add-iam-policy-binding ai-chat \
+  --location=asia-northeast1 \
+  --member="serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-cloudbuild.iam.gserviceaccount.com" \
+  --role="roles/artifactregistry.writer" \
+  --project=ai-chat-481005
+
+# GitHub Actionsサービスアカウント（Workload Identity Federation使用時）
+gcloud artifacts repositories add-iam-policy-binding ai-chat \
+  --location=asia-northeast1 \
+  --member="serviceAccount:github-actions-deploy@ai-chat-481005.iam.gserviceaccount.com" \
+  --role="roles/artifactregistry.writer" \
+  --project=ai-chat-481005
+```
+
+**`cloud-run-source-deploy`リポジトリへの権限付与：**
+
 `cloud-run-source-deploy` リポジトリに、**3つのサービスアカウントすべて**に権限を付与する必要があります：
 
 ```bash
