@@ -11,6 +11,7 @@ on:
 
 env:
   PROJECT_ID: ai-chat-481005
+  PROJECT_NUMBER: 547627011742
   REGION: asia-northeast1
   SERVICE_NAME: ai-chat
 
@@ -37,7 +38,7 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider
+          workload_identity_provider: projects/${{ env.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider
           service_account: github-actions-deploy@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
 
       - name: Enable required APIs
